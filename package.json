@@ -1,0 +1,11 @@
+{
+  "name": "color-compliance-checker",
+  "version": "1.0.0",
+  "description": "A simple Node.js script to check webpage color compliance using Puppeteer",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "puppeteer": "^24.2.1"
+  }
+}
