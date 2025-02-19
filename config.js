@@ -1,7 +1,6 @@
 // config.js
 
 module.exports = {
-    // Example color list: replace with your official design system colors
     ALLOWED_COLORS: [
         'rgb(252, 252, 253)',
         'rgb(249, 250, 251)',
@@ -104,14 +103,5 @@ module.exports = {
         'rgb(0, 0, 0)'
     ],
   
-    // (Optional) If you need brand classes, you could store them here:
-    // REQUIRED_CLASSES: [
-    //   'govsa-header',
-    //   'govsa-footer',
-    //   'govsa-button-primary'
-    // ],
-  
-    // (Optional) If you want to allow some color variations, set a threshold, etc.
-    // colorThreshold: 10,
-  };
+};
   

@@ -16,7 +16,7 @@ def process_colors(file_path):
     return rgb_colors
 
 def main():
-    file_path = "colors.txt"  # Change this to your file path
+    file_path = "allowed_colors.txt"
     rgb_colors = process_colors(file_path)
 
     # Format the output as required

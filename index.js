@@ -5,13 +5,29 @@ const { ALLOWED_COLORS } = require('./config');
 async function runComplianceCheck(url) {
     console.log(`\n🔍 Checking color compliance for: ${url}`);
 
-    // Launch Puppeteer
-    const browser = await puppeteer.launch({ headless: true });
+    // Launch Puppeteer with extra options for compatibility
+    const browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
     const page = await browser.newPage();
 
-    // Navigate to URL and wait until it's fully loaded
-    await page.goto(url, { waitUntil: 'networkidle2' });
-    await page.waitForSelector('body');
+    // Set a standard user agent for better compatibility
+    await page.setUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+        'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+        'Chrome/58.0.3029.110 Safari/537.36'
+    );
+
+    // Navigate with extended timeout and error handling
+    try {
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+        await page.waitForSelector('body', { timeout: 60000 });
+    } catch (error) {
+        console.error(`Error loading page: ${error.message}`);
+        await browser.close();
+        return;
+    }
 
     // Select all elements
     const elements = await page.$$('*');
@@ -19,11 +35,10 @@ async function runComplianceCheck(url) {
     let violations = [];
     let logOutput = `Color Compliance Report for: ${url}\n\n`;
 
-    // Extract computed styles
+    // Extract computed styles for every element
     const elementData = await Promise.all(elements.map(async (element) => {
         return await page.evaluate(el => {
             const computedStyle = window.getComputedStyle(el);
-            
             return {
                 tagName: el.tagName.toLowerCase(),
                 className: el.className || 'no-class',
@@ -39,84 +54,83 @@ async function runComplianceCheck(url) {
     }));
 
     // Filter out hidden elements
-    const visibleElements = elementData.filter(el => 
+    const visibleElements = elementData.filter(el =>
         el.display !== 'none' && el.visibility !== 'hidden' && parseFloat(el.opacity) > 0
     );
 
-    // Process visible elements and check for violations
+    // Process each visible element and group only the properties that are non-compliant
     visibleElements.forEach(el => {
-        let violated = false;
+        let elementViolations = {};
 
         if (!ALLOWED_COLORS.includes(el.color)) {
-            violations.push({
-                element: el.tagName,
-                className: el.className,
-                textContent: el.textContent,
-                property: 'color',
-                value: el.color
-            });
-            violated = true;
+            elementViolations.color = el.color;
+        }
+        if (
+            !ALLOWED_COLORS.includes(el.backgroundColor) &&
+            el.backgroundColor !== 'rgba(0, 0, 0, 0)' &&
+            el.backgroundColor !== 'transparent'
+        ) {
+            elementViolations.backgroundColor = el.backgroundColor;
+        }
+        if (
+            !ALLOWED_COLORS.includes(el.borderColor) &&
+            el.borderColor !== 'rgba(0, 0, 0, 0)' &&
+            el.borderColor !== 'transparent'
+        ) {
+            elementViolations.borderColor = el.borderColor;
         }
 
-        if (!ALLOWED_COLORS.includes(el.backgroundColor) && el.backgroundColor !== 'rgba(0, 0, 0, 0)' && el.backgroundColor !== 'transparent') {
+        if (Object.keys(elementViolations).length > 0) {
             violations.push({
-                element: el.tagName,
+                tagName: el.tagName,
                 className: el.className,
                 textContent: el.textContent,
-                property: 'background-color',
-                value: el.backgroundColor
+                violations: elementViolations
             });
-            violated = true;
-        }
-
-        if (!ALLOWED_COLORS.includes(el.borderColor) && el.borderColor !== 'rgba(0, 0, 0, 0)' && el.borderColor !== 'transparent') {
-            violations.push({
-                element: el.tagName,
-                className: el.className,
-                textContent: el.textContent,
-                property: 'border-color',
-                value: el.borderColor
-            });
-            violated = true;
-        }
-
-        // Append violations to the log output
-        if (violated) {
-            logOutput += `🚨 Violation Found: <${el.tagName} class="${el.className}"> "${el.textContent}"\n`;
-            logOutput += `   - ❌ Color: ${el.color}\n`;
-            logOutput += `   - ❌ Background: ${el.backgroundColor}\n`;
-            logOutput += `   - ❌ Border: ${el.borderColor}\n\n`;
         }
     });
 
     await browser.close();
 
-    // Report Results
+    // Build the final log report (one report per element with only the failing properties)
     if (violations.length > 0) {
-        logOutput += `=== 🚨 COLOR VIOLATIONS DETECTED (${violations.length}) ===\n`;
-        violations.forEach((v, idx) => {
-            logOutput += `${idx + 1}. <${v.element} class="${v.className}"> "${v.textContent}" has disallowed ${v.property}: ${v.value}\n`;
+        violations.forEach(v => {
+            logOutput += `🚨 Violation Found: <${v.tagName} class="${v.className}"> "${v.textContent}"\n`;
+            Object.entries(v.violations).forEach(([property, value]) => {
+                logOutput += `   - ❌ ${property}: ${value}\n`;
+            });
+            logOutput += '\n';
         });
-        logOutput += `\n❌ Total Violations: ${violations.length}\n`;
+
+        // Calculate total count of property violations (if an element has >1 violation, count them all)
+        const totalViolations = violations.reduce(
+            (acc, cur) => acc + Object.keys(cur.violations).length, 0
+        );
+        logOutput += `=== 🚨 COLOR VIOLATIONS DETECTED (${totalViolations}) ===\n`;
+        logOutput += `\n❌ Total Violations: ${totalViolations}\n`;
     } else {
         logOutput += '\n✅ No color violations found!\n';
     }
 
-    // Write results to a file
+    // Write the results to a file
     fs.writeFileSync('results.txt', logOutput);
     console.log(`\n✅ Results saved to results.txt`);
 }
 
 (async () => {
     const argIndex = process.argv.indexOf('--url');
-    let url = 'https://example.com'; // Default URL
 
-    if (argIndex > -1 && process.argv[argIndex + 1]) {
-        url = process.argv[argIndex + 1];
+    // Validate that the --url flag is provided and has an accompanying value
+    if (argIndex === -1 || !process.argv[argIndex + 1]) {
+        console.error('❌ Error: You must provide a URL using the --url flag.');
+        console.error('Usage: npm start -- --url https://example.com');
+        process.exit(1); // Exit with a non-zero status to indicate error
     }
 
+    const url = process.argv[argIndex + 1];
     console.log(`🔎 Checking: ${url}`);
 
     // Run compliance check
     await runComplianceCheck(url);
 })();
+
