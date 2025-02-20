@@ -99,9 +99,13 @@ module.exports = {
         'rgb(7, 77, 49)',
         'rgb(5, 51, 33)',
         'rgb(22, 22, 22)',
+        'rgb(22, 27, 38)',
         'rgb(255, 255, 255)',
         'rgb(0, 0, 0)'
     ],
-  
+    ALLOWED_FONT_PATTERNS :[
+        /IBMArabic/i,            
+        /IBMPlexSans/i,
+      ]
 };
   

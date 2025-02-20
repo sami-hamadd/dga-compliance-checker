@@ -1,9 +1,9 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
-const { ALLOWED_COLORS } = require('./config');
+const { ALLOWED_COLORS, ALLOWED_FONT_PATTERNS } = require('./config');
 
 async function runComplianceCheck(url) {
-    console.log(`\n🔍 Checking color compliance for: ${url}`);
+    console.log(`\n🔍 Checking color and font compliance for: ${url}`);
 
     // Launch Puppeteer with extra options for compatibility
     const browser = await puppeteer.launch({
@@ -33,9 +33,9 @@ async function runComplianceCheck(url) {
     const elements = await page.$$('*');
 
     let violations = [];
-    let logOutput = `Color Compliance Report for: ${url}\n\n`;
+    let logOutput = `Color & Font Compliance Report for: ${url}\n\n`;
 
-    // Extract computed styles for every element
+    // Extract computed styles for every element, including fontFamily
     const elementData = await Promise.all(elements.map(async (element) => {
         return await page.evaluate(el => {
             const computedStyle = window.getComputedStyle(el);
@@ -46,6 +46,7 @@ async function runComplianceCheck(url) {
                 color: computedStyle.color,
                 backgroundColor: computedStyle.backgroundColor,
                 borderColor: computedStyle.borderColor,
+                fontFamily: computedStyle.fontFamily, // Extract font family
                 display: computedStyle.display,
                 visibility: computedStyle.visibility,
                 opacity: computedStyle.opacity
@@ -58,7 +59,7 @@ async function runComplianceCheck(url) {
         el.display !== 'none' && el.visibility !== 'hidden' && parseFloat(el.opacity) > 0
     );
 
-    // Process each visible element and group only the properties that are non-compliant
+    // Process each visible element and check for color and font violations
     visibleElements.forEach(el => {
         let elementViolations = {};
 
@@ -80,6 +81,11 @@ async function runComplianceCheck(url) {
             elementViolations.borderColor = el.borderColor;
         }
 
+        const fontAllowed = ALLOWED_FONT_PATTERNS.some(pattern => pattern.test(el.fontFamily));
+if (!fontAllowed) {
+  elementViolations.fontFamily = el.fontFamily;
+}
+
         if (Object.keys(elementViolations).length > 0) {
             violations.push({
                 tagName: el.tagName,
@@ -92,7 +98,7 @@ async function runComplianceCheck(url) {
 
     await browser.close();
 
-    // Build the final log report (one report per element with only the failing properties)
+    // Build the final log report
     if (violations.length > 0) {
         violations.forEach(v => {
             logOutput += `🚨 Violation Found: <${v.tagName} class="${v.className}"> "${v.textContent}"\n`;
@@ -102,14 +108,13 @@ async function runComplianceCheck(url) {
             logOutput += '\n';
         });
 
-        // Calculate total count of property violations (if an element has >1 violation, count them all)
         const totalViolations = violations.reduce(
             (acc, cur) => acc + Object.keys(cur.violations).length, 0
         );
-        logOutput += `=== 🚨 COLOR VIOLATIONS DETECTED (${totalViolations}) ===\n`;
+        logOutput += `=== 🚨 TOTAL VIOLATIONS DETECTED (${totalViolations}) ===\n`;
         logOutput += `\n❌ Total Violations: ${totalViolations}\n`;
     } else {
-        logOutput += '\n✅ No color violations found!\n';
+        logOutput += '\n✅ No color or font violations found!\n';
     }
 
     // Write the results to a file
@@ -120,17 +125,14 @@ async function runComplianceCheck(url) {
 (async () => {
     const argIndex = process.argv.indexOf('--url');
 
-    // Validate that the --url flag is provided and has an accompanying value
     if (argIndex === -1 || !process.argv[argIndex + 1]) {
         console.error('❌ Error: You must provide a URL using the --url flag.');
         console.error('Usage: npm start -- --url https://example.com');
-        process.exit(1); // Exit with a non-zero status to indicate error
+        process.exit(1);
     }
 
     const url = process.argv[argIndex + 1];
     console.log(`🔎 Checking: ${url}`);
 
-    // Run compliance check
     await runComplianceCheck(url);
 })();
-
